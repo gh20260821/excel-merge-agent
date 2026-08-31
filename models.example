@@ -1,0 +1,14 @@
+{
+  "version": 2,
+  "default": "example-provider",
+  "profiles": {
+    "example-provider": {
+      "provider": "custom",
+      "base_url": "https://provider.example/v1",
+      "model": "model-id",
+      "credential": "example-provider-key",
+      "api_mode": "chat_completions",
+      "timeout": 60
+    }
+  }
+}

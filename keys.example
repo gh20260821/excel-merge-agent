@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "credentials": {
+    "example-provider-key": {
+      "api_key": "YOUR_API_KEY"
+    }
+  }
+}

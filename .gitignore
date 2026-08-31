@@ -1,0 +1,16 @@
+backend/.venv/
+backend/node_modules
+backend/**/__pycache__/
+backend/.pytest_cache/
+backend/var/
+frontend/node_modules/
+frontend/.next/
+frontend/dist/
+frontend/.vinext/
+frontend/.openai/
+.DS_Store
+keys
+models
+*.keys.local
+*.models.local
+/agent_note.md
