@@ -33,7 +33,9 @@ def _status_sheet(workbook: Workbook, values: tuple[object, object, object, obje
     worksheet.append(["Category 1", values[0], values[1]])
     worksheet.append(["Category 2", values[2], values[3]])
     if template:
-        worksheet["A8"] = "Instruction: Match rows by category and add numeric values from all sources."
+        worksheet["A8"] = (
+            "Instruction: Match rows by category and add numeric values from all sources."
+        )
     _style_headers(worksheet, 3)
 
 
@@ -71,9 +73,15 @@ def _plan_sheet(workbook: Workbook, project_name: str | None,
     elif project_name:
         _write_plan_row(worksheet, 5, mapping, project_name, project_values)
     aggregate_values = aggregate_values or {}
-    _write_plan_row(worksheet, 7, mapping, "Project Type 1", aggregate_values.get("Project Type 1"))
-    _write_plan_row(worksheet, 8, mapping, "Project Type 2", aggregate_values.get("Project Type 2"))
-    worksheet.cell(9, 1).value = "Instruction: Append project rows and add project-type totals by field."
+    _write_plan_row(
+        worksheet, 7, mapping, "Project Type 1", aggregate_values.get("Project Type 1")
+    )
+    _write_plan_row(
+        worksheet, 8, mapping, "Project Type 2", aggregate_values.get("Project Type 2")
+    )
+    worksheet.cell(9, 1).value = (
+        "Instruction: Append project rows and add project-type totals by field."
+    )
     _style_headers(worksheet, 26 if inserted_after_k else 25)
 
 

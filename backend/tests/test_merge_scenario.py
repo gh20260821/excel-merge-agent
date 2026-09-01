@@ -24,7 +24,7 @@ from app.domain import (
 from app.persistence import ConcurrentRunUpdate, RunRepository
 from app.service import RunService
 from app.workbook import build_planning_evidence, validate_merge_spec, verify_output
-from tests.fixture_specs import representative_fixture_spec
+from tests.fixture_specs import PLAN_SHEET, STATUS_SHEET, representative_fixture_spec
 from tests.synthetic_workbooks import build_synthetic_workbooks
 
 
@@ -90,13 +90,13 @@ async def test_representative_merge(tmp_path: Path, representative_fixtures: Pat
     assert {"cell_reconciliation", "row_reconciliation", "untouched_template_regions"} <= check_names
 
     workbook = load_workbook(run.output_path, data_only=True)
-    status = workbook["Status Summary"]
+    status = workbook[STATUS_SHEET]
     assert status["B3"].value == 426
     assert status["C3"].value == 131
     assert status["B4"].value == 0
     assert status["C4"].value == 0
 
-    plan = workbook["Project Plan"]
+    plan = workbook[PLAN_SHEET]
     assert plan["A5"].value == "Project 1"
     assert plan["A6"].value == "Project 2"
     assert plan["A7"].value == "Project Type 1"
@@ -122,7 +122,9 @@ async def test_semantic_column_alignment_handles_inserted_source_column(
     compiled = next(
         item for item in run.compiled_plan.operations if item.operation_id == "independent_projects"
     )
-    shifted_mapping = next(item for item in compiled.sources if item.source_file == "source_shifted.xlsx")
+    shifted_mapping = next(
+        item for item in compiled.sources if item.source_file == "source_shifted.xlsx"
+    )
     assert next(
         item.source_column for item in shifted_mapping.columns if item.target_column == 12
     ) == 13
@@ -131,7 +133,7 @@ async def test_semantic_column_alignment_handles_inserted_source_column(
     assert run.state == RunState.COMPLETED
 
     workbook = load_workbook(run.output_path, data_only=True)
-    sheet = workbook["Project Plan"]
+    sheet = workbook[PLAN_SHEET]
     # The synthetic shifted source inserts one field after K. Header-path
     # alignment maps source M/Q/S/Z back to template L/P/R/Y.
     assert sheet["A5"].value == "Project 3"
@@ -169,7 +171,7 @@ async def test_duplicate_business_key_is_never_resolved_by_first_match(
 ) -> None:
     source_path = tmp_path / "duplicate-key.xlsx"
     workbook = load_workbook(representative_fixtures / "source_shifted.xlsx")
-    sheet = workbook["Status Summary"]
+    sheet = workbook[STATUS_SHEET]
     sheet["A5"] = "Category 1"
     workbook.save(source_path)
     workbook.close()
@@ -203,7 +205,7 @@ async def test_reconciliation_detects_tampered_output(
     run = service.execute(run.id)
     manifest = json.loads(Path(run.audit_path).read_text(encoding="utf-8"))["reconciliation"]
     workbook = load_workbook(run.output_path)
-    workbook["Project Plan"]["L5"] = 999999
+    workbook[PLAN_SHEET]["L5"] = 999999
     workbook.save(run.output_path)
     workbook.close()
     verification = verify_output(
@@ -225,7 +227,7 @@ async def test_aggregate_text_is_blocking_and_can_be_resolved(
 ) -> None:
     source_path = tmp_path / "source-with-aggregate-marker.xlsx"
     source_book = load_workbook(representative_fixtures / "source_1.xlsx")
-    source_sheet = source_book["Project Plan"]
+    source_sheet = source_book[PLAN_SHEET]
     marker_row = aggregate_row(source_sheet, "Project Type 1")
     source_sheet.cell(marker_row, 2).value = "/"
     source_book.save(source_path)
@@ -243,7 +245,7 @@ async def test_aggregate_text_is_blocking_and_can_be_resolved(
     aggregate_conflicts = [
         conflict
         for conflict in run.conflicts
-        if conflict.sheet == "Project Plan"
+        if conflict.sheet == PLAN_SHEET
     ]
     assert len(aggregate_conflicts) == 1
     assert aggregate_conflicts[0].row_key == "Project Type 1"
@@ -265,7 +267,7 @@ async def test_aggregate_text_is_blocking_and_can_be_resolved(
     assert run.state == RunState.COMPLETED
 
     output_book = load_workbook(run.output_path, data_only=True)
-    output_sheet = output_book["Project Plan"]
+    output_sheet = output_book[PLAN_SHEET]
     output_row = aggregate_row(output_sheet, "Project Type 1")
     assert output_sheet.cell(output_row, 2).value == 0
     output_book.close()
