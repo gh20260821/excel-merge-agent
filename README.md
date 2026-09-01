@@ -1,13 +1,13 @@
 # Excel Merge Agent
 
-A local, human-in-the-loop agent for merging `.xlsx` workbooks. An LLM interprets template instructions and proposes a typed merge plan; deterministic Python validates, executes, and independently verifies every workbook change.
+A LLM agent for merging `.xlsx` workbooks intelligently. Use it via Web UI or CLI.
 
-The application supports two operations within the same workbook:
+How to use: 
 
-- **Add:** sum configured numeric cells or keyed rows across source workbooks.
-- **Concatenate:** append qualifying source rows in upload order.
-
-Different sheets and ranges can use different operations. Source columns may be inserted or reordered because the executor aligns fields through hierarchical workbook headers instead of relying only on fixed column positions.
+- Provide one template for reference, and one or more `.xlsx` source workbooks to merge.
+- Provide additional guidelines for merging task only if needed.
+- One click to merge.
+- Intelligently handle different merge operations (add and concatenate) and distorted workbook headers.
 
 ## Key features
 
