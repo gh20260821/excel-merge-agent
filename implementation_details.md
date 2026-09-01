@@ -1,10 +1,11 @@
 # Excel Merge Agent — Implementation Details
 
-This document describes the current implementation of the Excel merge agent, with emphasis on the backend, execution guarantees, scalability, and human-in-the-loop behavior. It reflects the code as of 2026-08-31 rather than a future design.
+This document describes the current implementation of the Excel merge agent, with emphasis on the backend, execution guarantees, scalability, and human-in-the-loop behavior. It reflects the code as of 2026-09-01 rather than a future design.
 
 ## 0. Current implementation summary
 
 - **Frontend:** chat-first React/Vinext workspace using the JavaScript Vercel AI SDK.
+- **CLI:** installable `excel-merge-agent` command with merge, resume, status, and recent-run commands.
 - **API:** local FastAPI service with run-oriented endpoints and AI SDK streaming chat.
 - **Planning model:** selectable local OpenAI-compatible provider profiles; model settings and API keys are stored separately.
 - **Planner:** the Python Vercel AI SDK (`ai==0.4.2`) with a forced, typed `submit_merge_plan` tool.
@@ -31,6 +32,7 @@ The model never edits cells or calculates final workbook values itself. Its resp
 ```mermaid
 flowchart LR
     U[Web UI] -->|upload / inspect / approve / execute| API[FastAPI API]
+    C[Interactive CLI] --> S[RunService]
     API --> S[RunService]
     S --> P[LLM planning agent]
     P -->|submit_merge_plan tool| V[Plan validation]
@@ -48,9 +50,10 @@ flowchart LR
 There are four principal layers:
 
 1. **React web UI** for uploads, plan review, conflict resolution, execution, and runtime decisions.
-2. **FastAPI application** exposing run-oriented APIs and an AI SDK chat endpoint.
-3. **Agent layer** using the Vercel AI SDK Python package for typed planning and the single write-approval tool.
-4. **Deterministic workbook layer** using `openpyxl` for inspection, validation, merging, auditing, and verification.
+2. **Interactive CLI** exposing the same persisted workflow without requiring the API server.
+3. **FastAPI application** exposing run-oriented APIs and an AI SDK chat endpoint.
+4. **Agent layer** using the Vercel AI SDK Python package for typed planning and the single write-approval tool.
+5. **Deterministic workbook layer** using `openpyxl` for inspection, validation, merging, auditing, and verification.
 
 ## 3. Repository layout
 
@@ -68,10 +71,12 @@ Important backend files are:
 | `backend/app/service.py` | Run lifecycle, persistence coordination, approval, execution, pause, and resume |
 | `backend/app/persistence.py` | SQLite-backed `RunRecord` persistence |
 | `backend/app/main.py` | FastAPI routes and AI SDK-compatible chat handling |
+| `backend/app/cli.py` | Installable interactive merge, resume, status, and run-list commands |
 | `backend/tests/fixture_specs.py` | Representative test-only merge configuration |
 | `backend/tests/synthetic_workbooks.py` | Generates fictional temporary workbooks for tests and live checks |
 | `backend/tests/test_merge_scenario.py` | End-to-end, validation, conflict, and resumability tests |
 | `backend/tests/test_model_config.py` | Model configuration tests |
+| `backend/tests/test_cli.py` | CLI parsing, pause/resume, approval, publication, and destination-binding tests |
 
 Test fixtures use only neutral English labels such as `Project 1` and `Project Type 1`; they contain no real locations, organizations, projects, or domain-specific source text.
 
@@ -471,7 +476,24 @@ The frontend is a Next/Vinext React application using `useChat` from the AI SDK.
 
 The execution experience has one explicit gate: the AI SDK write-tool approval immediately before local workbook and audit writes. Read-only inspection, planning, validation, and recovery diagnostics do not request approval. Business questions remain domain-level cards and are grouped where the same answer can be reused.
 
-## 13. Safety properties
+## 13. Command-line interface
+
+`backend/pyproject.toml` registers `excel-merge-agent = "app.cli:main"`. The CLI is a direct adapter over the shared `RunService`, model runtime factory, model-connection repository, and SQLite run store; it does not call the web UI and does not contain a second merge implementation. The FastAPI server therefore does not need to be running.
+
+The commands are:
+
+- `merge`: stage a template and explicit source files or source directories, configure batching and a model profile, plan, resolve business questions, approve, execute, verify, and publish;
+- `resume RUN_ID`: continue the persisted state machine from its current safe state;
+- `status RUN_ID`: show state, plan hash, pending questions, errors, and chronological events, optionally as JSON;
+- `runs`: list recent persisted runs, optionally as JSON.
+
+Terminal messages distinguish `[agent]`, `[model]`, and `[tool]` progress. Preflight conflicts and recoverable runtime decisions use numbered prompts based only on actions allowed by the domain model. The sole ordinary write prompt requires the exact word `approve` after displaying the workbook and audit destinations and warning about replacements.
+
+CLI destinations are added to the same `WriteApprovalGrant.output_paths` binding used by execution. After deterministic execution and verification succeed, `RunService.publish_outputs` checks every requested destination against that grant, copies through destination-local staging files, and atomically replaces the final paths. An unapproved path is rejected, and `resume` cannot silently redirect an approved write.
+
+Source directories support sorted `.xlsx` discovery, optional recursion, de-duplication, and the same batch-size range as the web UI. Interrupting or declining approval preserves the run and prints its ID for resumption.
+
+## 14. Safety properties
 
 The current design enforces the following properties:
 
@@ -489,7 +511,7 @@ The current design enforces the following properties:
 - Secrets are not returned in model/health summaries.
 - Model profiles and secret keys are separate, private local files; keys are sent only to the explicitly configured provider endpoint as authentication.
 
-## 14. Tests and verification status
+## 15. Tests and verification status
 
 The backend test suite currently covers:
 
@@ -509,7 +531,7 @@ The backend test suite currently covers:
 - verification pause followed by return to planning;
 - model configuration loading and validation.
 
-At the time of this document, the latest verification completed with 33 backend tests passing, together with successful frontend lint and production build checks. The additional tests verify optimistic concurrency, conversation recovery, legacy approval-state migration, safe plan-hash upgrades, malformed planner-call retry, batch result equivalence/progress, batch approval invalidation, resilience to incompatible historical records, legacy model-registry migration, key separation and permissions, key-preserving profile edits, rejection of masked credential placeholders, and sanitized provider-error classification.
+At the time of this document, the latest verification completed with 36 backend tests passing, together with successful frontend lint and production build checks. The additional tests verify CLI parsing and source discovery, approval pause/resume, atomic publication only to approved destinations, optimistic concurrency, conversation recovery, legacy approval-state migration, safe plan-hash upgrades, malformed planner-call retry, batch result equivalence/progress, batch approval invalidation, resilience to incompatible historical records, legacy model-registry migration, key separation and permissions, key-preserving profile edits, rejection of masked credential placeholders, and sanitized provider-error classification.
 
 Useful local commands are:
 
@@ -517,6 +539,7 @@ Useful local commands are:
 cd backend
 .venv/bin/python -m pytest -q
 .venv/bin/uvicorn app.main:app --reload --port 8000
+.venv/bin/excel-merge-agent --help
 ```
 
 ```bash
@@ -528,7 +551,7 @@ pnpm dev
 
 The frontend expects the API on port 8000 and normally serves locally on port 3000.
 
-## 15. Current limitations
+## 16. Current limitations
 
 - Legacy `.xls` files are not supported.
 - Formula handling uses cached displayed values; the service does not run Excel's calculation engine.
@@ -543,7 +566,7 @@ The frontend expects the API on port 8000 and normally serves locally on port 30
 - The agent relies on provider-compatible streaming and tool calls; provider behavior should be re-probed when the configured model changes.
 - Planner retries reduce transient malformed tool calls, but a provider that repeatedly emits invalid arguments can still exhaust all three attempts and leave the run safely failed.
 
-## 16. Architectural boundary
+## 17. Architectural boundary
 
 The most important implementation boundary is:
 

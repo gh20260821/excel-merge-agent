@@ -3,3 +3,4 @@ __pycache__/
 .pytest_cache/
 var/
 *.pyc
+*.egg-info/

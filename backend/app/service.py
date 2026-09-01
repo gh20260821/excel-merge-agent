@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import shutil
 import uuid
 from math import ceil
 from pathlib import Path
@@ -412,7 +413,12 @@ class RunService:
             self.fail_planning(run_id, exc)
             raise
 
-    def approve(self, run_id: str, spec_hash: str) -> RunRecord:
+    def approve(
+        self,
+        run_id: str,
+        spec_hash: str,
+        additional_output_paths: list[Path] | None = None,
+    ) -> RunRecord:
         """Persist the single authorization granted immediately before file writes."""
         run = self.get(run_id)
         if run.spec_hash != spec_hash:
@@ -427,6 +433,11 @@ class RunService:
         if run.compiled_plan is None or run.compiled_plan.spec_hash != spec_hash:
             raise ValueError("Compile the reviewed plan against the current inputs before approval")
         output_dir = self.run_root / run_id / "outputs"
+        approved_paths = [str(output_dir / "merged.xlsx"), str(output_dir / "audit.json")]
+        for path in additional_output_paths or []:
+            resolved = str(path.expanduser().resolve())
+            if resolved not in approved_paths:
+                approved_paths.append(resolved)
         run.write_approval = WriteApprovalGrant(
             spec_hash=spec_hash,
             template_sha256=run.template.sha256,
@@ -435,7 +446,7 @@ class RunService:
                 item.id: item.resolution for item in run.conflicts if item.resolution
             },
             excluded_sources=list(run.excluded_sources),
-            output_paths=[str(output_dir / "merged.xlsx"), str(output_dir / "audit.json")],
+            output_paths=approved_paths,
             compiled_plan_hash=run.compiled_plan.digest() if run.compiled_plan else None,
             batch_size=run.batch_size,
         )
@@ -446,6 +457,53 @@ class RunService:
             "Writing the staged workbook and audit was approved for the exact reviewed configuration.",
             spec_hash=spec_hash,
             output_paths=run.write_approval.output_paths,
+        )
+        return self.repository.save(run)
+
+    def publish_outputs(
+        self,
+        run_id: str,
+        workbook_destination: Path,
+        audit_destination: Path | None = None,
+    ) -> RunRecord:
+        """Atomically copy verified outputs only to paths covered by write approval."""
+        run = self.get(run_id)
+        if run.state != RunState.COMPLETED or not run.verification or not run.verification.passed:
+            raise ValueError("Only a completed and verified run can publish outputs")
+        if run.write_approval is None or run.write_approval.spec_hash != run.spec_hash:
+            raise ValueError("The completed run does not have a valid write approval")
+        if not run.output_path or not run.audit_path:
+            raise ValueError("The verified workbook or audit report is unavailable")
+
+        destinations = [workbook_destination]
+        sources = [Path(run.output_path)]
+        if audit_destination is not None:
+            destinations.append(audit_destination)
+            sources.append(Path(run.audit_path))
+
+        approved = {str(Path(path).expanduser().resolve()) for path in run.write_approval.output_paths}
+        resolved_destinations = [path.expanduser().resolve() for path in destinations]
+        unapproved = [str(path) for path in resolved_destinations if str(path) not in approved]
+        if unapproved:
+            raise ValueError(
+                "Output destination was not included in the write approval: "
+                + ", ".join(unapproved)
+            )
+
+        for source, destination in zip(sources, resolved_destinations, strict=True):
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            staging = destination.with_name(f".{destination.name}.{run.id}.staging")
+            staging.unlink(missing_ok=True)
+            try:
+                shutil.copy2(source, staging)
+                staging.replace(destination)
+            finally:
+                staging.unlink(missing_ok=True)
+
+        run.add_event(
+            "cli_outputs_published",
+            "Verified outputs were published to the CLI-approved destinations.",
+            output_paths=[str(path) for path in resolved_destinations],
         )
         return self.repository.save(run)
 

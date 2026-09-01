@@ -3,6 +3,7 @@ backend/node_modules
 backend/**/__pycache__/
 backend/.pytest_cache/
 backend/var/
+backend/*.egg-info/
 frontend/node_modules/
 frontend/.next/
 frontend/dist/

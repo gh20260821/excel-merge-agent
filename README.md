@@ -23,6 +23,7 @@ Different sheets and ranges can use different operations. Source columns may be 
 - Persistent, resumable task state in SQLite
 - Independent cell, row, and untouched-template verification
 - Chat-first web interface with visible tool calls and chronological progress
+- Installable interactive CLI with persisted pause and resume
 - Downloadable merged workbook and audit/lineage report
 - Named OpenAI-compatible model connections with local API-key storage
 
@@ -31,7 +32,9 @@ Different sheets and ranges can use different operations. Source columns may be 
 ```mermaid
 flowchart LR
     UI[Chat web UI] --> API[FastAPI]
-    API --> INSPECT[Workbook inspection]
+    CLI[Interactive CLI] --> SERVICE[Shared RunService]
+    API --> SERVICE
+    SERVICE --> INSPECT[Workbook inspection]
     INSPECT --> LLM[LLM planning agent]
     LLM -->|typed merge plan| VALIDATE[Plan validation and compilation]
     VALIDATE --> APPROVE[Local-write approval]
@@ -172,6 +175,43 @@ pnpm dev --host 127.0.0.1 --port 3000
 
 Open [http://localhost:3000](http://localhost:3000). The frontend expects the API at `http://localhost:8000`; override it with `NEXT_PUBLIC_API_URL` when necessary.
 
+## Command-line interface
+
+Installing the backend in editable mode registers the `excel-merge-agent` command. The CLI uses the same model profiles, SQLite run store, planning code, deterministic executor, approval binding, recovery logic, and verification code as the web interface. The API server does not need to be running.
+
+Start a merge with explicit source files:
+
+```bash
+cd backend
+.venv/bin/excel-merge-agent merge \
+  --template /path/to/template.xlsx \
+  --source /path/to/source-one.xlsx /path/to/source-two.xlsx \
+  --batch-size 50 \
+  --model-profile my-provider \
+  --output /path/to/merged.xlsx
+```
+
+For large collections, load every `.xlsx` file from one or more directories:
+
+```bash
+.venv/bin/excel-merge-agent merge \
+  --template /path/to/template.xlsx \
+  --source-dir /path/to/sources \
+  --recursive \
+  --batch-size 100 \
+  --output /path/to/merged.xlsx
+```
+
+The CLI prints model and tool progress chronologically, shows the reviewed plan, asks only unresolved business questions, and pauses for one explicit `approve` immediately before writing. If it is paused or interrupted, use the printed run ID:
+
+```bash
+.venv/bin/excel-merge-agent resume RUN_ID
+.venv/bin/excel-merge-agent status RUN_ID
+.venv/bin/excel-merge-agent runs
+```
+
+The audit destination defaults to `<output-stem>.audit.json` and can be changed with `--audit-output`. Approved output paths are persisted with the run; a resumed command cannot silently redirect an already approved write.
+
 ## Typical workflow
 
 1. Configure and test a model connection.
@@ -200,7 +240,7 @@ pnpm lint
 pnpm build
 ```
 
-The current suite contains 33 backend tests covering representative and generic layouts, inserted source columns, invalid numeric values, duplicate content and keys, plan validation, resumability, recovery, batch equivalence, reconciliation, provider configuration, secret separation, and sanitized provider errors.
+The current suite contains 36 backend tests covering representative and generic layouts, inserted source columns, invalid numeric values, duplicate content and keys, plan validation, web and CLI resumability, approved output publication, recovery, batch equivalence, reconciliation, provider configuration, secret separation, and sanitized provider errors.
 
 ### Synthetic test workbooks
 
