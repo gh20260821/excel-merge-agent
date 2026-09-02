@@ -7,7 +7,7 @@ How to use:
 - Provide one template for reference, and one or more `.xlsx` source workbooks to merge.
 - Provide additional guidelines for merging task only if needed.
 - One click to merge.
-- Intelligently handle different merge operations (add and concatenate) and distorted workbook headers.
+- Intelligently recognize and handle different merge operations (add and concatenate) and distorted workbook headers.
 
 ## Key features
 
